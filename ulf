@@ -1,0 +1,377 @@
+#!/bin/bash
+################################
+#william@william.co.il 12.2016 #
+#1.0                           #
+#see -h/--help for usage       #
+################################
+
+#fixed tmp dir if desired
+#use current PWD as tmp dir by default
+tmpdir="${PWD}/"
+
+#default server, also used for Finder integration if not set in next
+srvv="prnt.li"
+#Finder integration default server
+fsrvv="${srvv}"
+
+#default packager (zip/rar)
+pkgs="zip"
+
+#password file
+pwfile="~/.upl"
+
+#copy URL to clipboard (except on -c/CLI usage)
+copy=1
+
+#copy password to clipboard (except on -c/CLI usage)
+copyp=1
+
+#structure of filenames used server side
+tname="$(head -c 1024 /dev/urandom | md5)-$(/usr/local/bin/pwgen -A 10 1)"
+#this default results in  this:
+#89794z52e03b39d2fd34a7033b067847-phaiv8tlis.EXT
+
+
+#server config, self explanatory
+if [ "$srvv" == "server1" ]; then
+	srvv_host="my.host.serv"
+	srvv_user="root"
+	srvv_key="/Users/william/.ssh/id_rsa"
+	srvv_path="/var/www/"
+	srvv_port="22"
+	srvv_url="https://my.host.serv"
+	chown="www-data:www-data"
+elif [ "$srvv" == "server2" ]; then
+        srvv_host="10.4.5.12"
+        srvv_user="ubuntu"
+        srvv_key="/Users/william/.ssh/aws_key_bundle"
+        srvv_path="/dat/lz"
+        srvv_port="2222"
+        srvv_url="https://nlocalsrv:8888/lbz/store/2016/12"
+	chown="www-data:www-data"
+fi
+
+
+
+###Actual script
+#macOS/OSX things, enable single binary from Automator for Finder integration
+if [ "$1" == "AUTOMATOR" ] || [ "$1" == "AUTOMATORENC" ] || [ "$1" == "AUTOMATORORG" ]; then
+	fullll=$(echo "$@" | sed -e 's+AUTOMATORORG ++' -e 's+AUTOMATORENC ++' -e 's+AUTOMATOR ++')
+	if [ "$1" == "AUTOMATORORG" ]; then
+		feargs='-o'
+	fi
+	if [ "$1" == "AUTOMATORENC" ]; then
+		feargs='-p -e'
+	fi
+	fileu=$(/usr/local/bin/ulf ${feargs} -c -s ${fsrvv} -i "${fullll}")
+	filel=$(echo ${fileu} | awk '{print $1}')
+	filep=$(echo ${fileu} | awk '{print $2}')
+	if [ "$(curl -s -k --head ${fileu} | grep 'HTTP/1.1 200 OK' >>/dev/null; echo $?)" == "0" ]; then
+		echo ${filel} ${filep}
+	else
+		osascript -e 'tell app "Finder" to display dialog "Upload failed - Server online? Aborting this and pending jobs."'
+		exit 0
+	fi
+	exit 0
+fi
+
+
+#help function
+function helpgen {
+echo "Uploads on OSX - william@william.co.il 12.2016"
+echo ""
+echo "This script uploads files with new random filename, original filename in a random subfolder or packaged as RAR or ZIP, encrypted if desired."
+echo "By default the URL is automatically copied to the clipboard, a config option also enables password copy."
+echo "Passwords are by default also saved in a local file with the filename and upload date."
+echo ""
+echo "Switches:"
+echo "-h / --help - This help output"
+echo "-c / --cli - CLI mode for eg. shell usage, returns only URL on stdout if successful or exits with 1"
+echo "-i / --input - File to upload, full path or sub path of local dir. USE QUOTES, do not escape."
+echo "-nc / --nocopy - Do not copy file URL to clipboard, only stdout it"
+echo "-o / --original - Keep original filename, in case of folder or packaged the filename/dir name and archive extension in a subfolder for this upload only."
+echo "-p / --package -  enable packaging of file"
+echo "-e / --encrypt - Encrypt file. Enables packaging if not done by switch automatically."
+echo "-cp / --copypassword - Copy password after link into clipboard. Default is enabled."
+echo "-nsp - Do not save password to local file (Set: ${pwfile}). Default is set in var in script."
+echo "-rar - Use RAR format instead of ZIP (default). Supports encryption also."
+echo "-t / --tmpdir - Set temporary ZIP/RAR directory. Default is set in var in script."
+echo "-automator - Echo a simple Automator service Shell script for usage in OSX GUI/services"
+exit 0
+}
+
+#function to echo Automator config
+function echo_am_config {
+echo '
+#!/bin/bash
+RANDR=$RANDOM$RANDOM$RANDOM$RANDOM$RANDOM$RANDOM
+
+for filen in "$@"; do
+	if [ -f "/usr/local/bin/terminal-notifier" ]; then
+		fileb=$(basename "${filen}")
+		start=$(date +%s)
+		ssize=$(du -ch "${filen}" | tail -1 | sed -e 's+total++' | xargs)
+		/usr/local/bin/terminal-notifier -title "Upload Started" -message "Uploading: ${fileb} - Size: ${ssize}" -sender com.apple.photos
+	fi
+	result=$(/usr/local/bin/ulf AUTOMATOR "${filen}")
+	if [ -f "/usr/local/bin/terminal-notifier" ]; then
+		end=$(date +%s)
+		timeu=$(($end-$start))
+		/usr/local/bin/terminal-notifier -title "Upload Finished" -message "Uploaded: ${fileb} - Time: $timeu sec" -sender com.apple.photos
+	fi
+	echo ${result} >>/tmp/$RANDR
+done
+
+cat /tmp/$RANDR | pbcopy
+rm /tmp/$RANDR
+
+
+if [ -f "/usr/local/bin/terminal-notifier" ]; then
+	/usr/local/bin/terminal-notifier -title "Upload Finished" -message "Your upload is finished and the link(s) have been copied" -sender com.apple.photos
+else
+	osascript -e 'tell app "Finder" to display dialog "File(s) uploaded - links copied."'
+fi
+'
+exit 0
+}
+
+
+
+#get the switches
+while [ "x$#" != "x0" ]; do
+        value=""
+        case "$1" in
+                -h|--help)
+                        helpgen
+                ;;
+                -e|--encrypt)
+                        enc=1
+                ;;
+                -p|--package)
+                        pkg=1
+                ;;
+		-c|--cli)
+			cli=1
+		;;
+                -i|--input)
+                        value=$(echo -n "$1" | sed -r 's/^--?[a-z]+=//')
+                        [ "x$value" == "x$1" ] && value=""
+                        [ "x$value" == "x" ] && [ "x${2:0:1}" != "x-" ] && value="$2" && shift
+			ff=${value}
+                ;;
+                -t|--tmpdir)
+                        value=$(echo -n "$1" | sed -r 's/^--?[a-z]+=//')
+                        [ "x$value" == "x$1" ] && value=""
+                        [ "x$value" == "x" ] && [ "x${2:0:1}" != "x-" ] && value="$2" && shift
+			tmpdir=${value}
+                ;;
+                -s|--server)
+                        value=$(echo -n "$1" | sed -r 's/^--?[a-z]+=//')
+                        [ "x$value" == "x$1" ] && value=""
+                        [ "x$value" == "x" ] && [ "x${2:0:1}" != "x-" ] && value="$2" && shift
+                        srvv=${value}
+		;;
+		-o|--original)
+			org=1
+		;;
+		-nc|--nocopy)
+			if [ "$copy" == "1" ]; then unset copy; fi
+                ;;
+		-rar)
+			pkgs="rar"
+		;;
+		-nsp)
+			pw_nosave="1"
+		;;
+		-cp)
+			copyp="1"
+		;;
+		-automator)
+			echo_am_config
+		;;
+        esac
+        shift
+done
+
+if [ -z "$srvv" ]; then
+	echo "Err: No target server specified - set default one in script or use -s switch to supply it"
+	exit 1
+fi
+
+if [ -z "$ff" ]; then
+	echo "Err: No File/Dir supplied - use the -i switch to supply it."
+	exit 1
+fi
+
+if [ -f "$ff" ]; then
+	ty=f
+elif [ -d "$ff" ]; then	
+	ty=d
+else
+	echo "File/Dir does not exist"
+	exit 1
+fi
+
+oname="$(basename "${ff}")"
+
+if [ "$ty" == "d" ] && [ -z "$pkg" ]; then
+	if [ "$cli" != "1" ]; then
+	        echo "Warn: Directory supplied but no packaging enabled - enabling"
+	        pkg=1
+	else
+		pkg=1
+	fi
+fi
+
+if [ "$enc" == "1" ] && [ -z "$pkg" ]; then
+	if [ "$cli" != "1" ]; then
+	        echo "Warn: Encryption set but no packaging enabled which is required - enabling"
+	        pkg=1
+	else
+		pkg=1
+	fi
+fi
+
+if [ ! -z "$org" ]; then
+	if [ "$cli" != "1" ]; then
+		echo "Info: Original filename selected - creating remote directory by SSH"
+	fi
+	ssh -i ${srvv_key} -p ${srvv_port} -l ${srvv_user} ${srvv_host} "mkdir ${srvv_path}${tname}" && se="0"
+	if [ "$se" != "0" ]; then
+		echo "Err: mkdir failed by SSH - exiting"
+		exit 1
+	else
+		if [ "$cli" != "1" ]; then
+			echo "Info: mkdir ok"
+		fi
+	fi
+fi
+
+if [ ! -z "$enc" ]; then
+	passw=$(/usr/local/bin/pwgen -A 32 1)
+	if [ "$cli" != "1" ]; then
+		if [ -z "$pw_nosave" ]; then
+			echo "Password saved in local file ${pwfile}"
+			echo "" >>${pwfile}
+			echo "${tname} ${srvv} $(date) ${passw}" >>${pwfile}
+			echo "Password:"
+			echo ""
+			echo "${passw}"
+			echo ""
+		else
+	                echo 'Password NOT saved in local file!!!'
+	                echo "Password:"
+	                echo ""
+	                echo "${passw}"
+	                echo ""
+		fi
+	else 
+		if [ -z "$pw_nosave" ]; then
+                        echo "" >>${pwfile}
+                        echo "${tname} ${srvv} $(date) ${passw}" >>${pwfile}
+		fi	
+	fi
+	if [ "$pkgs" == "zip" ]; then
+		if [ "$cli" != "1" ]; then
+			zip -0 -r -P ${passw} "${tmpdir}${tname}.zip" "${ff}"
+		else
+			zip -0 -r -P ${passw} "${tmpdir}${tname}.zip" "${ff}" >>/dev/null
+		fi
+                ufile="${tmpdir}${tname}.zip"
+		ext=".zip"
+	elif [ "$pkgs" == "rar" ]; then
+		if [ "$cli" != "1" ]; then
+			rar a -m0 -hp${passw} "${tmpdir}${tname}.rar" "${ff}"
+		else
+        		rar a -m0 -hp${passw} "${tmpdir}${tname}.rar" "${ff}" >>/dev/null
+		fi
+	        ufile="${tmpdir}${tname}.rar"
+		ext=".rar"
+	fi
+fi
+
+
+if [ -z "$enc" ] && [ ! -z "$pkg" ]; then
+        if [ "$pkgs" == "zip" ]; then
+		if [ "$cli" != "1" ]; then
+	                zip -0 -r "${tmpdir}${tname}.zip" "${ff}"
+		else
+			zip -0 -r "${tmpdir}${tname}.zip" "${ff}" >>/dev/null
+		fi
+                ufile="${tmpdir}${tname}.zip"
+		ext=".zip"
+        elif [ "$pkgs" == "rar" ]; then
+		if [ "$cli" != "1" ]; then
+	                rar a -m0 "${tmpdir}${tname}.rar" "${ff}"
+		else
+			rar a -m0 "${tmpdir}${tname}.rar" "${ff}" >>/dev/null
+		fi
+                ufile="${tmpdir}${tname}.rar"
+		ext=".rar"
+        fi
+fi
+
+if [ -z "$pkg" ]; then
+	ufile="${ff}"
+	ext=".${oname##*.}"
+fi
+
+if [ ! -z "$org" ]; then
+	if [ "$cli" != "1" ]; then
+		scp -i ${srvv_key} -P ${srvv_port} "${ufile}" "${srvv_user}@${srvv_host}:${srvv_path}${tname}/${oname}"
+		ssh -i ${srvv_key} -p ${srvv_port} -l ${srvv_user} ${srvv_host} "chown ${chown} ${srvv_path}${tname}/${oname}"
+	else
+		scp -i ${srvv_key} -P ${srvv_port} "${ufile}" "${srvv_user}@${srvv_host}:${srvv_path}${tname}/${oname}" >>/dev/null
+		ssh -i ${srvv_key} -p ${srvv_port} -l ${srvv_user} ${srvv_host} "chown ${chown} ${srvv_path}${tname}/${oname}" >>/dev/null
+	fi
+else
+	if [ "$cli" != "1" ]; then
+		scp -i ${srvv_key} -P ${srvv_port} "${ufile}" "${srvv_user}@${srvv_host}:${srvv_path}${tname}${ext}"
+		ssh -i ${srvv_key} -p ${srvv_port} -l ${srvv_user} ${srvv_host} "chown ${chown} ${srvv_path}${tname}${ext}"
+	else
+		scp -i ${srvv_key} -P ${srvv_port} "${ufile}" "${srvv_user}@${srvv_host}:${srvv_path}${tname}${ext}" >>/dev/null
+		ssh -i ${srvv_key} -p ${srvv_port} -l ${srvv_user} ${srvv_host} "chown ${chown} ${srvv_path}${tname}${ext}" >>/dev/null
+	fi
+fi
+if [ ! -z "${pkg}" ]; then
+	rm "${ufile}"
+fi
+
+if [ -z "$copy" ] && [ -z "$org" ]; then
+	if [ "$cli" != "1" ]; then
+		echo "Path to file:"
+		echo ""
+		echo "${srvv_url}/${tname}${ext} $(if [ ! -z "$passw" ] && [ "$copyp" == "1" ]; then echo ${passw}; else true; fi)"
+		echo ""
+	else
+		echo "${srvv_url}/${tname}${ext} $(if [ ! -z "$passw" ] && [ "$copyp" == "1" ]; then echo ${passw}; else true; fi)"
+	fi
+elif [ ! -z "$copy" ] && [ -z "$org" ]; then
+	if [ "$cli" != "1" ]; then
+	        echo "Path to file:"
+	        echo ""
+	        echo "${srvv_url}/${tname}${ext} $(if [ ! -z "$passw" ] && [ "$copyp" == "1" ]; then echo ${passw}; else true; fi)"
+		echo "${srvv_url}/${tname}${ext} $(if [ ! -z "$passw" ] && [ "$copyp" == "1" ]; then echo ${passw}; else true; fi)" | pbcopy
+	        echo "Copied to clipboard."
+	else
+		echo "${srvv_url}/${tname}${ext} $(if [ ! -z "$passw" ] && [ "$copyp" == "1" ]; then echo ${passw}; else true; fi)"
+	fi
+elif [ -z "$copy" ] && [ ! -z "$org" ]; then
+	if [ "$cli" != "1" ]; then
+		echo "Path to file:"
+		echo ""
+		echo "${srvv_url}/${tname}/${oname}"
+	else
+		echo "${srvv_url}/${tname}/${oname}"
+	fi
+elif [ ! -z "$copy" ] && [ ! -z "$org" ]; then
+	if [ "$cli" != "1" ]; then
+	        echo "Path to file:"
+        	echo ""
+	        echo "${srvv_url}/${tname}/${oname} $(if [ ! -z "$passw" ] && [ "$copyp" == "1" ]; then echo ${passw}; else true; fi)"
+		echo "${srvv_url}/${tname}/${oname} $(if [ ! -z "$passw" ] && [ "$copyp" == "1" ]; then echo ${passw}; else true; fi)" | pbcopy
+		echo "Copied to clipboard."
+	else
+		echo "${srvv_url}/${tname}/${oname} $(if [ ! -z "$passw" ] && [ "$copyp" == "1" ]; then echo ${passw}; else true; fi)"
+	fi
+fi

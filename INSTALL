@@ -1,0 +1,16 @@
+Requires:
+- OSX 10.x
+- rar binary in path if rar is used
+
+Highly recommended but not required:
+- "terminal-notifier" from homebrew as it gives much nicer upload info (status, size..) as notification popup and not ugly "OK" "Cancel" windows...
+
+Install - Client:
+- Copy ulf binary to /usr/local/bin/ulf
+- If desired install one or more of the supplied workflows via Automator as "Service", allowing usage from context menu/setting shortcuts
+- Edit /usr/local/bin/ulf and add at least a server
+
+Install - Server:
+- Run some webserver, apt-get install nginx should be mostly sufficient already, then upload to /var/www
+- SSH access should be ideally *not* root but webserver user or someone with chmod permissions, then set chmod line in the server config
+

@@ -1,0 +1,21 @@
+Uploads on OSX - william@william.co.il 12.2016
+
+This script uploads files with new random filename, original filename in a random subfolder or packaged as RAR or ZIP, encrypted if desired.
+By default the URL is automatically copied to the clipboard, a config option also enables password copy.
+Passwords are by default also saved in a local file with the filename and upload date.
+
+See INSTALL file in this directory for usage and the workflow directory for Automator workflows (created on 10.12, but should not matter).
+
+Switches:
+-h / --help - This help output
+-c / --cli - CLI mode for eg. shell usage, returns only URL on stdout if successful or exits with 1
+-i / --input - File to upload, full path or sub path of local dir. USE QUOTES, do not escape.
+-nc / --nocopy - Do not copy file URL to clipboard, only stdout it
+-o / --original - Keep original filename, in case of folder or packaged the filename/dir name and archive extension in a subfolder for this upload only.
+-p / --package -  enable packaging of file
+-e / --encrypt - Encrypt file. Enables packaging if not done by switch automatically.
+-cp / --copypassword - Copy password after link into clipboard. Default is enabled.
+-nsp - Do not save password to local file (Set: ~/.upl). Default is set in var in script.
+-rar - Use RAR format instead of ZIP (default). Supports encryption also.
+-t / --tmpdir - Set temporary ZIP/RAR directory. Default is set in var in script.
+-automator - Echo a simple Automator service Shell script for usage in OSX GUI/services
