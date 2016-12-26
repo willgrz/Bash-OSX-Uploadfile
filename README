@@ -4,6 +4,7 @@ This script uploads files with new random filename, original filename in a rando
 By default the URL is automatically copied to the clipboard, a config option also enables password copy.
 Passwords are by default also saved in a local file with the filename and upload date.
 
+I also included an Automator workflow for screenshot creation/uploaded and context menu upload in Finder.
 See INSTALL file in this directory for usage and the workflow directory for Automator workflows (created on 10.12, but should not matter).
 
 Switches:

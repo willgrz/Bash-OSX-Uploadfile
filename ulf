@@ -10,7 +10,7 @@
 tmpdir="${PWD}/"
 
 #default server, also used for Finder integration if not set in next
-srvv="prnt.li"
+srvv="server1"
 #Finder integration default server
 fsrvv="${srvv}"
 
